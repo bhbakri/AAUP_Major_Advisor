@@ -274,6 +274,6 @@ Students should not submit passwords, identification numbers, payment details, m
 
 ## Ownership
 
-The AAUP Major Advisor is operated and published by **Arab American University**.
+The AAUP Major Advisor is operated and published by Arab American University.
 
 The repository and its contents are unlicensed unless AAUP provides a separate license. Public visibility does not grant permission to copy, redistribute, commercially reuse, or misrepresent AAUP code, data, branding, or institutional content.
