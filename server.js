@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-
+import path from "node:path";
 import express from "express";
 import rateLimit from "express-rate-limit";
 
@@ -399,6 +399,39 @@ app.get(
       .send(token);
   }
 );
+
+/*
+Documents
+*/
+
+const DOCS_DIR = path.resolve("public/docs");
+
+app.get("/privacy", (req, res) => {
+  res.sendFile(path.join(DOCS_DIR, "privacy.pdf"), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": "inline"
+    }
+  });
+});
+
+app.get("/terms", (req, res) => {
+  res.sendFile(path.join(DOCS_DIR, "terms.pdf"), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": "inline"
+    }
+  });
+});
+
+app.get("/support", (req, res) => {
+  res.sendFile(path.join(DOCS_DIR, "support.pdf"), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": "inline"
+    }
+  });
+});
 
 /*
   Return 404 for unmatched routes
