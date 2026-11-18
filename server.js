@@ -24,8 +24,19 @@ const PORT =
   Number(process.env.PORT ?? 8787);
 
 const MCP_PATH = "/mcp";
+const CHAT_PATH = "/api/chat";
 const HEALTH_PATH = "/healthz";
 const READY_PATH = "/readyz";
+
+const CHAT_PAGE_PATH =
+  path.resolve("public/index.html");
+
+const OPENAI_API_URL =
+  "https://api.openai.com/v1/responses";
+
+const OPENAI_MODEL =
+  process.env.OPENAI_MODEL?.trim() ||
+  "gpt-6-luna";
 
 const MCP_METHODS = new Set([
   "POST",
@@ -144,6 +155,23 @@ app.use(
 );
 
 /*
+  Website chat rate limiting
+*/
+
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  message: {
+    error:
+      "Too many chat requests. Please try again shortly.",
+  },
+});
+
+/*
   Handle CORS preflight requests
   for the MCP endpoint.
 */
@@ -184,22 +212,11 @@ app.use((req, res, next) => {
 });
 
 /*
-  Basic server status page
+  Major Advisor website
 */
 
 app.get("/", (req, res) => {
-  res
-    .status(200)
-    .type("text/plain")
-    .send(
-      [
-        "AAUP Major Advisor MCP server is running.",
-        "",
-        `MCP endpoint: ${MCP_PATH}`,
-        `Health check: ${HEALTH_PATH}`,
-        `Readiness check: ${READY_PATH}`,
-      ].join("\n")
-    );
+  res.sendFile(CHAT_PAGE_PATH);
 });
 
 /*
@@ -373,6 +390,243 @@ app.all(
 );
 
 /*
+  Temporary website chat
+
+  The browser sends a small in-memory
+  transcript. Nothing is stored by this
+  application between requests.
+*/
+
+function normalizeChatHistory(history) {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  return history
+    .slice(-12)
+    .map((item) => ({
+      role:
+        item?.role === "assistant"
+          ? "Assistant"
+          : "User",
+      content:
+        typeof item?.content === "string"
+          ? item.content.trim().slice(0, 4000)
+          : "",
+    }))
+    .filter((item) => item.content);
+}
+
+function buildChatInput(history, message) {
+  const transcript = history
+    .map(
+      (item) =>
+        `${item.role}: ${item.content}`
+    )
+    .join("\n\n");
+
+  if (!transcript) {
+    return message;
+  }
+
+  return [
+    "Conversation so far:",
+    transcript,
+    "",
+    `User: ${message}`,
+  ].join("\n");
+}
+
+function extractResponseText(response) {
+  const textParts = [];
+
+  for (const item of response?.output ?? []) {
+    if (item?.type !== "message") {
+      continue;
+    }
+
+    for (const content of item.content ?? []) {
+      if (
+        content?.type === "output_text" &&
+        typeof content.text === "string"
+      ) {
+        textParts.push(content.text);
+      }
+
+      if (
+        content?.type === "refusal" &&
+        typeof content.refusal === "string"
+      ) {
+        textParts.push(content.refusal);
+      }
+    }
+  }
+
+  return textParts.join("\n\n").trim();
+}
+
+function getPublicMcpUrl(req) {
+  const configuredUrl =
+    process.env.MCP_SERVER_URL?.trim();
+
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  return `${req.protocol}://${req.get("host")}${MCP_PATH}`;
+}
+
+app.post(
+  CHAT_PATH,
+  chatLimiter,
+  express.json({ limit: "32kb" }),
+
+  async (req, res) => {
+    const apiKey =
+      process.env.OPENAI_API_KEY?.trim();
+
+    if (!apiKey) {
+      res.status(503).json({
+        error:
+          "AI chat is not configured yet.",
+      });
+      return;
+    }
+
+    const message =
+      typeof req.body?.message === "string"
+        ? req.body.message.trim()
+        : "";
+
+    if (!message) {
+      res.status(400).json({
+        error: "Message is required.",
+      });
+      return;
+    }
+
+    if (message.length > 4000) {
+      res.status(400).json({
+        error:
+          "Message is too long. Please keep it under 4,000 characters.",
+      });
+      return;
+    }
+
+    const history =
+      normalizeChatHistory(
+        req.body?.history
+      );
+
+    const mcpServerUrl =
+      getPublicMcpUrl(req);
+
+    try {
+      const openaiResponse =
+        await fetch(OPENAI_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+            Authorization:
+              `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: OPENAI_MODEL,
+            store: false,
+            reasoning: {
+              effort: "low",
+            },
+            instructions: [
+              "You are the AAUP Major Advisor, an AI-assisted academic-program exploration assistant for Arab American University (AAUP).",
+              "Answer in the user's language; support both English and Arabic.",
+              "For questions about AAUP bachelor-program eligibility, program matching, majors, campuses, admission averages, or personalized recommendations, use the create_major_match_report tool whenever the required information is available.",
+              "If required information is missing, ask only for the missing information before calling the tool.",
+              "Treat the AAUP tool result as authoritative for the structured report. Do not invent admission rules, program requirements, tuition figures, or eligibility decisions.",
+              "Never claim that the Advisor guarantees admission, confirms certificate equivalency, submits an application, reserves a seat, determines a scholarship, or accesses private student records.",
+              "Final eligibility must be confirmed by the AAUP Deanship of Admission and Registration.",
+              "Keep answers concise, clear, and student-friendly.",
+            ].join("\n"),
+            tools: [
+              {
+                type: "mcp",
+                server_label:
+                  "aaup_major_advisor",
+                server_description:
+                  "AAUP's read-only Major Advisor for preliminary bachelor-program eligibility checks and program matching.",
+                server_url:
+                  mcpServerUrl,
+                require_approval:
+                  "never",
+                allowed_tools: [
+                  "create_major_match_report",
+                ],
+              },
+            ],
+            input:
+              buildChatInput(
+                history,
+                message
+              ),
+            max_output_tokens: 2000,
+          }),
+          signal:
+            AbortSignal.timeout(120000),
+        });
+
+      const responseBody =
+        await openaiResponse.json();
+
+      if (!openaiResponse.ok) {
+        console.error(
+          "OpenAI chat request failed:",
+          openaiResponse.status,
+          responseBody?.error?.message ??
+            "Unknown OpenAI API error"
+        );
+
+        res.status(502).json({
+          error:
+            "The AI service is temporarily unavailable. Please try again.",
+        });
+        return;
+      }
+
+      const reply =
+        extractResponseText(
+          responseBody
+        );
+
+      if (!reply) {
+        console.error(
+          "OpenAI chat response did not contain text output."
+        );
+
+        res.status(502).json({
+          error:
+            "The AI service returned an empty response. Please try again.",
+        });
+        return;
+      }
+
+      res.status(200).json({
+        reply,
+      });
+    } catch (error) {
+      console.error(
+        "Error handling website chat request:",
+        error
+      );
+
+      res.status(502).json({
+        error:
+          "The AI service is temporarily unavailable. Please try again.",
+      });
+    }
+  }
+);
+
+/*
   OpenAI domain-verification route
 */
 
@@ -401,7 +655,7 @@ app.get(
 );
 
 /*
-Documents
+  Documents
 */
 
 const DOCS_DIR = path.resolve("public/docs");
@@ -496,6 +750,10 @@ httpServer.listen(
 
     console.log(
       `Major Advisor MCP: http://localhost:${PORT}${MCP_PATH}`
+    );
+
+    console.log(
+      `Website chat: http://localhost:${PORT}${CHAT_PATH}`
     );
 
     console.log(

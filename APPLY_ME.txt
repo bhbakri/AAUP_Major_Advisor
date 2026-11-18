@@ -1,0 +1,45 @@
+AAUP MAJOR ADVISOR - MINIMAL WEBSITE CHAT PATCH
+
+Files changed:
+1. server.js                  (replace existing file)
+2. public/index.html          (new file)
+3. .env.example              (replace existing file)
+4. docker.env.example        (replace existing file)
+
+Files intentionally NOT changed:
+- package.json
+- package-lock.json
+- Dockerfile
+- compose.yaml
+- src/*
+- data/*
+- test/*
+- existing public/docs/*
+
+Why no npm dependency was added:
+Node 22 already provides fetch(), so the server calls the OpenAI Responses API directly.
+
+Production docker.env must contain:
+OPENAI_API_KEY=<real OpenAI API key>
+OPENAI_MODEL=gpt-6-luna
+MCP_SERVER_URL=https://<final-public-AAUP-domain>/mcp
+
+Then redeploy:
+docker compose up -d --build --force-recreate
+
+Public routes after deployment:
+/              website chat
+/api/chat      website-to-OpenAI backend
+/mcp           existing MCP endpoint
+/readyz        existing readiness check
+/healthz       existing liveness check
+/privacy       existing PDF
+/terms         existing PDF
+/support       existing PDF
+
+Reverse proxy note:
+The AAUP reverse proxy must forward / and /api/chat to the container in addition to /mcp.
+The cleanest configuration is to proxy the entire domain (location /) to 127.0.0.1:3001.
+
+Local testing note:
+OpenAI must be able to reach MCP_SERVER_URL over the public internet. A localhost MCP URL will not work with the remote MCP tool. For local website testing, set MCP_SERVER_URL to an already-public test deployment such as Render.

@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AAUP Major Advisor</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f5f7f8;
+      color: #17202a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .page {
+      width: min(860px, 100%);
+    }
+
+    header {
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: clamp(1.7rem, 4vw, 2.4rem);
+    }
+
+    .subtitle,
+    .notice,
+    footer {
+      color: #58636e;
+      line-height: 1.5;
+    }
+
+    .chat {
+      background: #fff;
+      border: 1px solid #d9dfe4;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.07);
+    }
+
+    #messages {
+      height: min(58vh, 520px);
+      min-height: 360px;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #fbfcfd;
+    }
+
+    .message {
+      max-width: 82%;
+      padding: 11px 13px;
+      border-radius: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .assistant {
+      align-self: flex-start;
+      background: #eef2f4;
+    }
+
+    .user {
+      align-self: flex-end;
+      background: #e6f2ec;
+    }
+
+    form {
+      display: flex;
+      gap: 10px;
+      padding: 14px;
+      border-top: 1px solid #d9dfe4;
+    }
+
+    textarea {
+      flex: 1;
+      min-height: 48px;
+      max-height: 150px;
+      resize: vertical;
+      border: 1px solid #c7cfd6;
+      border-radius: 10px;
+      padding: 12px;
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 0 18px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      background: #173f35;
+      color: white;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border-top: 1px solid #edf0f2;
+      font-size: 0.9rem;
+      color: #66717c;
+    }
+
+    .clear {
+      background: transparent;
+      color: #44505b;
+      padding: 4px 8px;
+      font-weight: 600;
+    }
+
+    footer {
+      margin-top: 14px;
+      font-size: 0.9rem;
+    }
+
+    footer a {
+      color: inherit;
+    }
+
+    @media (max-width: 620px) {
+      body {
+        padding: 12px;
+      }
+
+      #messages {
+        min-height: 52vh;
+      }
+
+      .message {
+        max-width: 92%;
+      }
+
+      form {
+        flex-direction: column;
+      }
+
+      button[type="submit"] {
+        min-height: 44px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <h1>AAUP Major Advisor</h1>
+      <div class="subtitle">
+        Ask about AAUP bachelor’s programs in English or Arabic.
+      </div>
+    </header>
+
+    <section class="chat" aria-label="AAUP Major Advisor chat">
+      <div id="messages" aria-live="polite"></div>
+
+      <form id="chat-form">
+        <textarea
+          id="message-input"
+          maxlength="4000"
+          placeholder="Tell me your certificate, average, interests, or the programs you are considering..."
+          aria-label="Message"
+          required
+        ></textarea>
+        <button id="send-button" type="submit">Send</button>
+      </form>
+
+      <div class="toolbar">
+        <span id="status">Ready</span>
+        <button id="clear-button" class="clear" type="button">Clear chat</button>
+      </div>
+    </section>
+
+    <p class="notice">
+      This Advisor provides preliminary academic guidance only. Final admission
+      eligibility must be confirmed by the AAUP Deanship of Admission and Registration.
+    </p>
+
+    <footer>
+      <a href="/privacy" target="_blank" rel="noopener">Privacy</a>
+      &nbsp;·&nbsp;
+      <a href="/terms" target="_blank" rel="noopener">Terms</a>
+      &nbsp;·&nbsp;
+      <a href="/support" target="_blank" rel="noopener">Support</a>
+    </footer>
+  </main>
+
+  <script>
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("message-input");
+    const messages = document.getElementById("messages");
+    const sendButton = document.getElementById("send-button");
+    const clearButton = document.getElementById("clear-button");
+    const status = document.getElementById("status");
+
+    let history = [];
+
+    function addMessage(role, content) {
+      const element = document.createElement("div");
+      element.className = `message ${role}`;
+      element.textContent = content;
+      element.dir = "auto";
+      messages.appendChild(element);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function resetChat() {
+      history = [];
+      messages.replaceChildren();
+      addMessage(
+        "assistant",
+        "Hello! Tell me about your academic background and what you are interested in studying at AAUP. You can write in English or Arabic."
+      );
+      status.textContent = "Ready";
+      input.focus();
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const message = input.value.trim();
+      if (!message) return;
+
+      addMessage("user", message);
+      input.value = "";
+      input.disabled = true;
+      sendButton.disabled = true;
+      status.textContent = "Thinking…";
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            message,
+            history
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Unable to get a response.");
+        }
+
+        const reply = data.reply;
+        addMessage("assistant", reply);
+
+        history.push(
+          { role: "user", content: message },
+          { role: "assistant", content: reply }
+        );
+
+        history = history.slice(-12);
+        status.textContent = "Ready";
+      } catch (error) {
+        addMessage(
+          "assistant",
+          error.message || "The chat is temporarily unavailable. Please try again."
+        );
+        status.textContent = "Error";
+      } finally {
+        input.disabled = false;
+        sendButton.disabled = false;
+        input.focus();
+      }
+    });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    clearButton.addEventListener("click", resetChat);
+
+    resetChat();
+  </script>
+</body>
+</html>
